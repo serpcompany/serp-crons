@@ -9,7 +9,8 @@ Usage:
     --runs-per-cycle N \
     --seconds-between-cycles N \
     --seconds-between-runs N \
-    --seconds-after-cycle N
+    --seconds-after-cycle N \
+    [--max-cycles N]
 
 Runs:
   npx skills add https://github.com/serpdownloaders/skills --skills skool-video-downloader -y
@@ -19,13 +20,15 @@ Parameters:
   --seconds-between-cycles Number of seconds to wait before starting the next cycle
   --seconds-between-runs   Number of seconds to wait between runs inside a cycle
   --seconds-after-cycle    Number of seconds to wait after each cycle completes
+  --max-cycles             Optional maximum number of cycles to run before exiting
 
 Example:
   ./run-skills-add-loop.sh \
     --runs-per-cycle 3 \
     --seconds-between-cycles 600 \
     --seconds-between-runs 15 \
-    --seconds-after-cycle 60
+    --seconds-after-cycle 60 \
+    --max-cycles 1
 EOF
 }
 
@@ -43,6 +46,7 @@ runs_per_cycle=""
 seconds_between_cycles=""
 seconds_between_runs=""
 seconds_after_cycle=""
+max_cycles=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -82,6 +86,15 @@ while [[ $# -gt 0 ]]; do
       seconds_after_cycle="${2:-}"
       shift 2
       ;;
+    --max-cycles)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for $1" >&2
+        usage >&2
+        exit 1
+      fi
+      max_cycles="${2:-}"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -109,8 +122,17 @@ require_integer "seconds_between_cycles" "$seconds_between_cycles"
 require_integer "seconds_between_runs" "$seconds_between_runs"
 require_integer "seconds_after_cycle" "$seconds_after_cycle"
 
+if [[ -n "$max_cycles" ]]; then
+  require_integer "max_cycles" "$max_cycles"
+fi
+
 if (( runs_per_cycle < 1 )); then
   echo "runs_per_cycle must be at least 1" >&2
+  exit 1
+fi
+
+if [[ -n "$max_cycles" ]] && (( max_cycles < 1 )); then
+  echo "max_cycles must be at least 1" >&2
   exit 1
 fi
 
@@ -142,6 +164,11 @@ while true; do
   if (( seconds_after_cycle > 0 )); then
     echo "Sleeping $seconds_after_cycle seconds after cycle $cycle_number"
     sleep "$seconds_after_cycle"
+  fi
+
+  if [[ -n "$max_cycles" ]] && (( cycle_number >= max_cycles )); then
+    echo "Reached max cycles ($max_cycles); exiting"
+    break
   fi
 
   if (( seconds_between_cycles > 0 )); then
