@@ -24,7 +24,7 @@ on:
         required: false
         default: "5"
   schedule:
-    - cron: "/2 * * * *"
+    - cron: "2 * * * *"
 
 permissions:
   contents: read
