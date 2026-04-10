@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Add composer.json to every org repo
         env:
-          GH_TOKEN: ${{ secrets.ORG_COMPOSER_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry_run }}
           ORG: serpapps
         run: |
