@@ -13,7 +13,9 @@ Usage:
     [--max-cycles N]
 
 Runs:
-  npx skills add https://github.com/serpdownloaders/skills --skills skool-video-downloader vimeo-video-downloader loom-video-downloader onlyfans-video-downloader -y
+  npx skills add https://github.com/serpdownloaders/skills --skills skool-video-downloader vimeo-video-downloader loom-video-downloader onlyfans-video-downloader 123movies-downloader circle-downloader clientclub-downloader dailymotion-downloader facebook-video-downloader gohighlevel-downloader gokollab-downloader instagram-downloader justforfans-downloader kajabi-video-downloader loom-video-downloader m3u8-downloader manyvids-downloader mindvalley-downloader onlyfans-video-downloader podia-downloader redgifs-downloader skool-video-downloader sprout-video-downloader teachable-video-downloader vimeo-video-downloader wistia-video-downloader whop-video-downloader xvideos-video-downloader -y
+
+  
 
 Parameters:
   --runs-per-cycle         Number of times to run the command per cycle
