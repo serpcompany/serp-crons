@@ -11,14 +11,9 @@ on:
         description: Case-sensitive string that must appear in the repository URL slug
         required: true
         type: string
-      output_file:
-        description: Output .txt filename
-        required: true
-        default: matching-public-repos.txt
-        type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   list-repos:
@@ -34,7 +29,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ORG: ${{ inputs.org }}
           STRING: ${{ inputs.string }}
-          OUTPUT_FILE: ${{ inputs.output_file }}
+          OUTPUT_FILE: ${{ github.run_id }}-${{ inputs.org }}-${{ inputs.string }}.txt
         run: |
           set -euo pipefail
 
@@ -51,8 +46,22 @@ jobs:
           echo "Wrote $(wc -l < "${OUTPUT_FILE}") matching repositories to ${OUTPUT_FILE}"
           cat "${OUTPUT_FILE}"
 
+      - name: Commit repository list to this repo
+        env:
+          ORG: ${{ inputs.org }}
+          STRING: ${{ inputs.string }}
+          OUTPUT_FILE: ${{ github.run_id }}-${{ inputs.org }}-${{ inputs.string }}.txt
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "${OUTPUT_FILE}"
+          git commit -m "Add matching public repo list for ${ORG}/${STRING}"
+          git push
+
       - name: Upload repository list
         uses: actions/upload-artifact@v4
         with:
           name: matching-public-repos
-          path: ${{ inputs.output_file }}
+          path: ${{ github.run_id }}-${{ inputs.org }}-${{ inputs.string }}.txt
