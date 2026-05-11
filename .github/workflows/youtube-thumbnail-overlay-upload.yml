@@ -1,0 +1,147 @@
+name: Generate YouTube Thumbnail Overlays
+
+on:
+  workflow_dispatch:
+    inputs:
+      youtube_urls:
+        description: One or more YouTube URLs/video IDs. Paste one per line, or comma-separated.
+        required: true
+        type: string
+      owner:
+        description: GitHub owner/org for the upload repo
+        required: false
+        default: devinschumacher
+        type: string
+      repo:
+        description: GitHub upload repo
+        required: false
+        default: uploads
+        type: string
+      branch:
+        description: GitHub upload branch
+        required: false
+        default: main
+        type: string
+      path_prefix:
+        description: Folder in the upload repo
+        required: false
+        default: images
+        type: string
+      overwrite:
+        description: Overwrite the same output filename if it already exists
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  generate-upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.UPLOADS_REPO_TOKEN }}
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pillow
+
+      - name: Generate overlay thumbnails and upload
+        id: upload
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "Missing required secret: UPLOADS_REPO_TOKEN" >&2
+            echo "Create a PAT with contents:write access to the target upload repo." >&2
+            exit 1
+          fi
+
+          mkdir -p tmp/youtube-thumbnail-overlays tmp/youtube-thumbnail-results
+
+          python - <<'PY' > tmp/youtube-thumbnail-results/urls.txt
+          import re
+
+          raw = '''${{ inputs.youtube_urls }}'''
+          values = [item.strip() for item in re.split(r'[\n,]+', raw) if item.strip()]
+          if not values:
+              raise SystemExit('No YouTube URLs/video IDs provided')
+          for value in values:
+              print(value)
+          PY
+
+          : > tmp/youtube-thumbnail-results/results.jsonl
+          while IFS= read -r youtube_url_or_id; do
+            echo "Generating thumbnail for: ${youtube_url_or_id}"
+            args=(
+              "${youtube_url_or_id}"
+              --owner "${{ inputs.owner }}"
+              --repo "${{ inputs.repo }}"
+              --branch "${{ inputs.branch }}"
+              --path-prefix "${{ inputs.path_prefix }}"
+              --output-dir tmp/youtube-thumbnail-overlays
+              --json
+            )
+            if [ "${{ inputs.overwrite }}" = "true" ]; then
+              args+=(--overwrite)
+            fi
+
+            python scripts/youtube_thumbnail_overlay_upload.py "${args[@]}" \
+              | tee tmp/youtube-thumbnail-results/latest.json
+            python - <<'PY' >> tmp/youtube-thumbnail-results/results.jsonl
+          import json
+          with open('tmp/youtube-thumbnail-results/latest.json') as f:
+              print(json.dumps(json.load(f), separators=(',', ':')))
+          PY
+          done < tmp/youtube-thumbnail-results/urls.txt
+
+          python - <<'PY'
+          import csv, json, os
+          rows = []
+          with open('tmp/youtube-thumbnail-results/results.jsonl') as f:
+              for line in f:
+                  line = line.strip()
+                  if line:
+                      rows.append(json.loads(line))
+
+          csv_path = 'tmp/youtube-thumbnail-results/results.csv'
+          fields = ['video_id', 'title', 'filename', 'github_path', 'raw_url', 'github_url', 'commit_url', 'local_path']
+          with open(csv_path, 'w', newline='') as f:
+              writer = csv.DictWriter(f, fieldnames=fields)
+              writer.writeheader()
+              for row in rows:
+                  writer.writerow({field: row.get(field, '') for field in fields})
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'count={len(rows)}\n')
+              f.write(f'results_csv={csv_path}\n')
+              if rows:
+                  f.write(f'first_raw_url={rows[0].get("raw_url", "")}\n')
+          PY
+
+      - name: Print result summary
+        run: |
+          echo "Generated/uploaded ${{ steps.upload.outputs.count }} thumbnail(s)."
+          echo "First raw URL: ${{ steps.upload.outputs.first_raw_url }}"
+          echo "Results CSV: ${{ steps.upload.outputs.results_csv }}"
+          {
+            echo "## YouTube thumbnail overlay upload results"
+            echo
+            echo "Generated/uploaded ${{ steps.upload.outputs.count }} thumbnail(s)."
+            echo
+            echo '```csv'
+            cat tmp/youtube-thumbnail-results/results.csv
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload local thumbnails/results artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-thumbnail-overlays
+          path: |
+            tmp/youtube-thumbnail-overlays
+            tmp/youtube-thumbnail-results
