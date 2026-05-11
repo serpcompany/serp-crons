@@ -1,0 +1,58 @@
+name: List matching public GitHub repos
+
+on:
+  workflow_dispatch:
+    inputs:
+      org:
+        description: GitHub organization name
+        required: true
+        type: string
+      string:
+        description: Case-sensitive string that must appear in the repository URL slug
+        required: true
+        type: string
+      output_file:
+        description: Output .txt filename
+        required: true
+        default: matching-public-repos.txt
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  list-repos:
+    name: List matching public repos
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build repository list
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORG: ${{ inputs.org }}
+          STRING: ${{ inputs.string }}
+          OUTPUT_FILE: ${{ inputs.output_file }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${OUTPUT_FILE}" == */* || "${OUTPUT_FILE}" != *.txt ]]; then
+            echo "output_file must be a .txt filename without directories" >&2
+            exit 1
+          fi
+
+          gh api --paginate "/orgs/${ORG}/repos?type=public&per_page=100" \
+            --jq '.[] | select(.private == false) | [.name, .html_url] | @tsv' \
+            | awk -F '\t' -v needle="${STRING}" 'index($1, needle) > 0 { print "- " $2 }' \
+            | sort -f > "${OUTPUT_FILE}"
+
+          echo "Wrote $(wc -l < "${OUTPUT_FILE}") matching repositories to ${OUTPUT_FILE}"
+          cat "${OUTPUT_FILE}"
+
+      - name: Upload repository list
+        uses: actions/upload-artifact@v4
+        with:
+          name: matching-public-repos
+          path: ${{ inputs.output_file }}
