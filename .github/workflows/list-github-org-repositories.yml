@@ -8,8 +8,9 @@ on:
         required: true
         type: string
       string:
-        description: Case-sensitive string that must appear in the repository URL slug
-        required: true
+        description: Optional case-sensitive string that must appear in the repository URL slug. Leave blank for all public repos.
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -24,23 +25,37 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set output filename
+        id: output-file
+        env:
+          ORG: ${{ inputs.org }}
+          STRING: ${{ inputs.string }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          filter_label="${STRING:-all}"
+          output_file="${RUN_ID}-${ORG}-${filter_label}.txt"
+
+          if [[ "${output_file}" == */* || "${output_file}" != *.txt ]]; then
+            echo "Generated output filename must be a .txt filename without directories: ${output_file}" >&2
+            exit 1
+          fi
+
+          echo "OUTPUT_FILE=${output_file}" >> "${GITHUB_ENV}"
+          echo "output_file=${output_file}" >> "${GITHUB_OUTPUT}"
+
       - name: Build repository list
         env:
           GH_TOKEN: ${{ github.token }}
           ORG: ${{ inputs.org }}
           STRING: ${{ inputs.string }}
-          OUTPUT_FILE: ${{ github.run_id }}-${{ inputs.org }}-${{ inputs.string }}.txt
         run: |
           set -euo pipefail
 
-          if [[ "${OUTPUT_FILE}" == */* || "${OUTPUT_FILE}" != *.txt ]]; then
-            echo "output_file must be a .txt filename without directories" >&2
-            exit 1
-          fi
-
           gh api --paginate "/orgs/${ORG}/repos?type=public&per_page=100" \
             --jq '.[] | select(.private == false) | [.name, .html_url] | @tsv' \
-            | awk -F '\t' -v needle="${STRING}" 'index($1, needle) > 0 { print "- " $2 }' \
+            | awk -F '\t' -v needle="${STRING}" 'needle == "" || index($1, needle) > 0 { print "- " $2 }' \
             | sort -f > "${OUTPUT_FILE}"
 
           echo "Wrote $(wc -l < "${OUTPUT_FILE}") matching repositories to ${OUTPUT_FILE}"
@@ -50,18 +65,19 @@ jobs:
         env:
           ORG: ${{ inputs.org }}
           STRING: ${{ inputs.string }}
-          OUTPUT_FILE: ${{ github.run_id }}-${{ inputs.org }}-${{ inputs.string }}.txt
         run: |
           set -euo pipefail
+
+          filter_label="${STRING:-all}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- "${OUTPUT_FILE}"
-          git commit -m "Add matching public repo list for ${ORG}/${STRING}"
+          git commit -m "Add matching public repo list for ${ORG}/${filter_label}"
           git push
 
       - name: Upload repository list
         uses: actions/upload-artifact@v4
         with:
           name: matching-public-repos
-          path: ${{ github.run_id }}-${{ inputs.org }}-${{ inputs.string }}.txt
+          path: ${{ steps.output-file.outputs.output_file }}
